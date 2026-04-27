@@ -9,7 +9,7 @@ load_dotenv()
 router = APIRouter()
 TMDB_KEY = os.getenv("TMDB_API_KEY")
 BASE_URL = "https://api.themoviedb.org/3"
-HTTPX_VERIFY = os.getenv("HTTPX_VERIFY", "false").lower() in ("1", "true", "yes")
+HTTPX_VERIFY = False
 TMDB_LANGUAGE = "pt-BR"
 
 @router.get("/filmes/populares")
