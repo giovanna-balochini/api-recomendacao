@@ -21,7 +21,7 @@ pip install -r requirements.txt
 
 Crie um arquivo `.env` na raiz:
             TMDB_API_KEY=sua_chave_aqui
-            SSL_CERT_FILE=caminho_do_certificado
+
 
 ## ▶️ Como rodar
 
@@ -38,5 +38,5 @@ Acesse a documentação em: http://127.0.0.1:8000/docs
 | GET | /filmes/populares | Lista filmes populares |
 | GET | /series/populares | Lista séries populares |
 | GET | /filmes/buscar?genero= | Busca filmes por gênero |
-| GET | /recomendar?tema= | Recomenda filmes e séries |
+| GET | /recomendar?tema= | Recomenda filmes e séries por gênero ou tema livre (ex: "viagem no tempo") |
 
