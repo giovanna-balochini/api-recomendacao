@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+import asyncio
 import httpx
 import os
 import unicodedata
@@ -12,6 +13,10 @@ TMDB_KEY = os.getenv("TMDB_API_KEY")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 HTTPX_VERIFY = os.getenv("HTTPX_VERIFY", "false").lower() in ("1", "true", "yes")
 TMDB_LANGUAGE = "pt-BR"
+TMDB_IMAGE_BASE_URL = os.getenv("TMDB_IMAGE_BASE_URL", "https://image.tmdb.org/t/p")
+TMDB_IMAGE_SIZE = os.getenv("TMDB_IMAGE_SIZE", "w185")
+TMDB_REGION = os.getenv("TMDB_REGION", "BR")
+DEFAULT_FAIXA_ETARIA = os.getenv("DEFAULT_FAIXA_ETARIA", "N/D")
 MAX_RESULTS = int(os.getenv("MAX_RESULTS", "24"))
 MAX_PAGES = int(os.getenv("MAX_PAGES", "5"))
 
@@ -104,18 +109,163 @@ async def _keyword_id(client: httpx.AsyncClient, query: str) -> int | None:
     return None
 
 
+def _normalize_faixa_etaria(value: str) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    upper = raw.upper()
+    if upper in {"L", "LIVRE", "G", "TV-G", "TV-Y"}:
+        return "L"
+    if upper in {"TV-Y7"}:
+        return "7+"
+    if upper in {"PG", "TV-PG"}:
+        return "10+"
+    if upper == "PG-13":
+        return "13+"
+    if upper == "TV-14":
+        return "14+"
+    if upper in {"R", "NC-17", "TV-MA"}:
+        return "18+"
+
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if digits:
+        try:
+            n = int(digits)
+        except ValueError:
+            return None
+        if n <= 0:
+            return "L"
+        return f"{n}+"
+
+    return None
+
+
+def _faixa_weight(label: str | None) -> int:
+    if not label:
+        return -1
+    if label == "L":
+        return 0
+    digits = "".join(ch for ch in label if ch.isdigit())
+    try:
+        return int(digits) if digits else -1
+    except ValueError:
+        return -1
+
+
+def _best_faixa(values: list[str]) -> str | None:
+    best = None
+    best_w = -1
+    for v in values:
+        norm = _normalize_faixa_etaria(v)
+        w = _faixa_weight(norm)
+        if w > best_w:
+            best_w = w
+            best = norm
+    return best
+
+
+async def _movie_certification(client: httpx.AsyncClient, movie_id: int, region: str) -> str | None:
+    cache_key = f"tmdb:movie:cert:{region}:{movie_id}"
+    cached = cache_get(cache_key)
+    if isinstance(cached, str):
+        return cached
+
+    response = await client.get(
+        f"{TMDB_BASE_URL}/movie/{movie_id}/release_dates",
+        params={"api_key": TMDB_KEY},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("iso_3166_1") != region:
+            continue
+        certs: list[str] = []
+        for rd in entry.get("release_dates", []) or []:
+            if not isinstance(rd, dict):
+                continue
+            cert = (rd.get("certification") or "").strip()
+            if cert:
+                certs.append(cert)
+        best = _best_faixa(certs)
+        if best:
+            cache_set(cache_key, best, ttl_seconds=60 * 60 * 24)
+            return best
+
+    return None
+
+
+async def _tv_certification(client: httpx.AsyncClient, tv_id: int, region: str) -> str | None:
+    cache_key = f"tmdb:tv:cert:{region}:{tv_id}"
+    cached = cache_get(cache_key)
+    if isinstance(cached, str):
+        return cached
+
+    response = await client.get(
+        f"{TMDB_BASE_URL}/tv/{tv_id}/content_ratings",
+        params={"api_key": TMDB_KEY},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("iso_3166_1") != region:
+            continue
+        rating = (entry.get("rating") or "").strip()
+        best = _normalize_faixa_etaria(rating)
+        if best:
+            cache_set(cache_key, best, ttl_seconds=60 * 60 * 24)
+            return best
+
+    return None
+
+
 def _movie_item(raw: dict) -> dict | None:
+    item_id = raw.get("id")
+    if not isinstance(item_id, int):
+        return None
     titulo = raw.get("title")
     if not titulo:
         return None
-    return {"titulo": titulo, "ano": (raw.get("release_date") or "")[:4]}
+    poster_path = raw.get("poster_path")
+    backdrop_path = raw.get("backdrop_path")
+    return {
+        "id": item_id,
+        "titulo": titulo,
+        "ano": (raw.get("release_date") or "")[:4],
+        "overview": raw.get("overview") or "",
+        "faixa_etaria": None,
+        "poster_path": poster_path,
+        "backdrop_path": backdrop_path,
+        "poster_url": f"{TMDB_IMAGE_BASE_URL}/{TMDB_IMAGE_SIZE}{poster_path}" if poster_path else None,
+    }
 
 
 def _tv_item(raw: dict) -> dict | None:
+    item_id = raw.get("id")
+    if not isinstance(item_id, int):
+        return None
     titulo = raw.get("name")
     if not titulo:
         return None
-    return {"titulo": titulo, "ano": (raw.get("first_air_date") or "")[:4]}
+    poster_path = raw.get("poster_path")
+    backdrop_path = raw.get("backdrop_path")
+    return {
+        "id": item_id,
+        "titulo": titulo,
+        "ano": (raw.get("first_air_date") or "")[:4],
+        "overview": raw.get("overview") or "",
+        "faixa_etaria": None,
+        "poster_path": poster_path,
+        "backdrop_path": backdrop_path,
+        "poster_url": f"{TMDB_IMAGE_BASE_URL}/{TMDB_IMAGE_SIZE}{poster_path}" if poster_path else None,
+    }
 
 
 async def _collect_tmdb(
@@ -265,6 +415,43 @@ async def recomendar(tema: str):
                 f"tmdb:tv:search:{TMDB_LANGUAGE}:{tema_en.lower()}",
                 _tv_item,
             )
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def fill_movie_cert(item: dict) -> None:
+            item_id = item.get("id")
+            if not isinstance(item_id, int):
+                return
+            async with semaphore:
+                cert = None
+                try:
+                    for region in (TMDB_REGION, "US", "GB", "CA"):
+                        if region == TMDB_REGION or region in {"US", "GB", "CA"}:
+                            cert = await _movie_certification(client, item_id, region)
+                            if cert:
+                                break
+                except httpx.HTTPError:
+                    cert = None
+                item["faixa_etaria"] = cert or DEFAULT_FAIXA_ETARIA
+
+        async def fill_tv_cert(item: dict) -> None:
+            item_id = item.get("id")
+            if not isinstance(item_id, int):
+                return
+            async with semaphore:
+                cert = None
+                try:
+                    for region in (TMDB_REGION, "US", "GB", "CA"):
+                        if region == TMDB_REGION or region in {"US", "GB", "CA"}:
+                            cert = await _tv_certification(client, item_id, region)
+                            if cert:
+                                break
+                except httpx.HTTPError:
+                    cert = None
+                item["faixa_etaria"] = cert or DEFAULT_FAIXA_ETARIA
+
+        await asyncio.gather(*(fill_movie_cert(item) for item in filmes))
+        await asyncio.gather(*(fill_tv_cert(item) for item in series))
 
     return {
         "filmes": filmes,
