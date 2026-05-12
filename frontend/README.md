@@ -1,20 +1,20 @@
-# Ìæ¨ Frontend ‚Äî Recomendador
+# Frontend - Recomendador
 
-Interface React para o projeto de recomenda√ß√£o de filmes e s√©ries.
+Interface React para o projeto de recomendacao de filmes e series.
 
-## Ì∫Ä Tecnologias
+## Tecnologias
 - React
 - Styled Components
 - Axios
 
-## ‚ñ∂Ô∏è Como rodar
+## Como rodar
 
-\`\`\`bash
+```bash
 npm install
 npm start
-\`\`\`
+```
 
 Acesse em: http://localhost:3000
 
-## ‚öôÔ∏è Requisito
+## Requisito
 O backend precisa estar rodando em http://127.0.0.1:8000
