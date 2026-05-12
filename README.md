@@ -20,7 +20,18 @@ pip install -r requirements.txt
 ## ⚙️ Configuração
 
 Crie um arquivo `.env` na raiz:
-            TMDB_API_KEY=sua_chave_aqui
+
+```env
+TMDB_API_KEY=sua_chave_aqui
+
+# opcionais
+HTTPX_VERIFY=false
+TMDB_IMAGE_SIZE=w185
+TMDB_REGION=BR
+DEFAULT_FAIXA_ETARIA=N/D
+MAX_RESULTS=24
+MAX_PAGES=5
+```
 
 
 ## ▶️ Como rodar
@@ -39,4 +50,15 @@ Acesse a documentação em: http://127.0.0.1:8000/docs
 | GET | /series/populares | Lista séries populares |
 | GET | /filmes/buscar?genero= | Busca filmes por gênero |
 | GET | /recomendar?tema= | Recomenda filmes e séries por gênero ou tema livre (ex: "viagem no tempo") |
+| GET | /recomendar/{tema} | Mesmo endpoint (alternativa sem querystring) |
+
+## 🧾 Resposta do /recomendar
+
+Cada item em `filmes` e `series` inclui:
+
+- `titulo` (string)
+- `ano` (string)
+- `overview` (string, pode vir vazio)
+- `poster_url` (string ou null)
+- `faixa_etaria` (string, ex.: `L`, `16+`, `18+`, `N/D`)
 
