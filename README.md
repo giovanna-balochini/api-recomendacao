@@ -62,3 +62,14 @@ Cada item em `filmes` e `series` inclui:
 - `poster_url` (string ou null)
 - `faixa_etaria` (string, ex.: `L`, `16+`, `18+`, `N/D`)
 
+## 🖥️ Frontend
+
+A interface React está na pasta `/frontend`. Para rodar:
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+Acesse em: http://localhost:3000
